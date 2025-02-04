@@ -48,7 +48,7 @@ func GetLen(inp *Input) (int, int, error) {
 	n := 0
 	b := 0
 
-	remainder := inp.remaining()
+	remainder := inp.Remaining()
 	if remainder == 0 {
 		return -1, b, fmt.Errorf("empty string to work with")
 	}
@@ -70,7 +70,7 @@ func GetLen(inp *Input) (int, int, error) {
 	return n, b, nil
 }
 
-//func FindBalancing(bs []byte, lead byte, tail byte) uint16 {
+// func FindBalancing(bs []byte, lead byte, tail byte) uint16 {
 //	var seen int = 0
 //
 //	for index, val := range bs {
@@ -87,7 +87,7 @@ func GetLen(inp *Input) (int, int, error) {
 //		}
 //	}
 //	return 0
-//}
+// }
 
 func GetOctet(inp *Input) (*Node, error) {
 	octStrStart := 0
@@ -115,7 +115,6 @@ func GetSexp(inp *Input) (*Node, error) {
 	var tag, node, next *Node
 	var sexp Node
 	var err error
-	var lastByte int
 	nb := 0
 
 	// first element MUST be a tag
@@ -126,12 +125,13 @@ func GetSexp(inp *Input) (*Node, error) {
 	}
 	node = tag
 
-	for inp.remaining() > 0 {
-		if inp.nextByte() == LeftBracket {
+	for inp.Remaining() > 0 {
+		if inp.NextByte() == LeftBracket {
 			nb++
+			inp.startByte += 1
 			// can be either an s-expr or a star-form
 			// a star-form starts with 1:*
-			if bytes.Equal(inp.prefix(3), StarFormPrefix) {
+			if bytes.Equal(inp.Prefix(3), StarFormPrefix) {
 				next, err = GetStarForm(inp)
 			} else {
 				next, err = GetSexp(inp)
@@ -143,15 +143,14 @@ func GetSexp(inp *Input) (*Node, error) {
 				node.next = next
 				node = next
 			}
-		} else if inp.nextByte() == RightBracket {
+		} else if inp.NextByte() == RightBracket {
 			nb--
+			inp.startByte += 1
 			if nb < 0 {
 				break
 			}
-			lastByte += 1
 		} else { // MUST be an octet-string
 			next, err = GetOctet(inp)
-			lastByte = next.end
 			node.next = next
 			node = next
 		}
@@ -169,7 +168,7 @@ func GetStarForm(inp *Input) (*Node, error) {
 	var c []byte
 
 	// first element MUST be '1:*'
-	// Skip the '1:*' prefix
+	// Skip the '1:*' Prefix
 	inp.startByte += 3
 	node, err = GetOctet(inp)
 	if err != nil {
@@ -193,32 +192,38 @@ func GetStarForm(inp *Input) (*Node, error) {
 	return node, nil
 }
 
-//func ParseSexp(inp *Input) (*Node, error) {
-//	var node *Node
-//	var n uint16
-//	var star_form = []byte{'0', '*'}
-//	var err error
-//
-//	if inp.next_byte() == '(' { // Sexp
-//		n = FindBalancing(bs, '(', ')')
-//		if n > 0 {
-//			node, err = GetSexp(inp)
-//			if err != nil {
-//				log.Fatal(err)
-//				return node, err
-//			}
-//		}
-//	} else if bytes.Equal(bs[0:1], star_form) {
-//		if len(bs) == 2 {
-//			node = &Node{
-//				typ: Wildcard,
-//			}
-//		} else {
-//			node, err = GetStarForm(inp)
-//		}
-//	} else {
-//		node, err = GetOctet(inp)
-//	}
-//
-//	return node, nil
-//}
+func PrintOctet(bs []byte, node *Node, indent int) {
+	for ; indent > 0; indent-- {
+		fmt.Printf("%s", TAB)
+	}
+	fmt.Printf("%s", bs[node.begin:node.end])
+	if node.next != nil {
+		PrintOctet(bs, node.next, indent+1)
+	} else {
+		fmt.Println()
+	}
+}
+
+func PrintSExpression(bs []byte, root *Node, indent int) {
+
+	var node *Node
+
+	node = root.part
+	for ; indent > 0; indent-- {
+		fmt.Printf("%s", TAB)
+	}
+	fmt.Println(string(bs[node.begin:node.end]))
+
+	if node.next.typ == SExpression {
+		PrintSExpression(bs, node.next, indent+1)
+	} else if node.next.typ == Octet {
+		PrintOctet(bs, node.next, indent+2)
+	}
+	if root.next != nil {
+		if root.next.typ == SExpression {
+			PrintSExpression(bs, root.next, indent+1)
+		} else if root.next.typ == Octet {
+			PrintOctet(bs, root.next, indent+2)
+		}
+	}
+}

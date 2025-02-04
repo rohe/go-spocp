@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"runtime/trace"
 )
 
 type StarForm struct {
@@ -35,7 +36,7 @@ func CorrectLimit(val []byte) bool {
 	return false
 }
 
-func GetLimit(bs []byte, begin int) ([]byte, []byte) {
+func GetLimit(bs []byte, begin int) ([]byte, []byte, int) {
 	var goge_lole, value *Node
 	var err error
 	var lim_value, value_slice []byte
@@ -46,7 +47,7 @@ func GetLimit(bs []byte, begin int) ([]byte, []byte) {
 	}
 	lim_value = bs[goge_lole.end-begin : goge_lole.end]
 	if CorrectLimit(lim_value) == false {
-		return nil, []byte("Incorrect boundary type " + string(lim_value))
+		return nil, []byte("Incorrect boundary type " + string(lim_value)), 0
 	}
 
 	value, err = GetOctet(bs, goge_lole.end+1)
@@ -55,17 +56,23 @@ func GetLimit(bs []byte, begin int) ([]byte, []byte) {
 	}
 	value_slice = bs[value.begin:value.end]
 
-	return lim_value, value_slice
+	if value.end+1 == ')' {
+		endchr = 0
+	} else {
+		endchr = value.end
+	}
+	return lim_value, value_slice, endchr
 }
 
 func VerifyLimit(bs []byte, limit_typ []byte, value []byte) bool {
-	return True
+	return true
 }
 
 func GetRange(bs []byte, begin int) (*StarForm, error) {
 	var node *Node
 	var err error
 	var slice, limit, value []byte
+	var endchr int
 
 	node, err = GetOctet(bs, begin)
 	if err == nil {
@@ -74,12 +81,23 @@ func GetRange(bs []byte, begin int) (*StarForm, error) {
 
 	star_form = StarForm{
 		value_type: ' ',
+		boundary1:  nil,
+		limit1:     nil,
+		boundary2:  nil,
+		limit2:     nil,
 	}
 
 	slice = bs[node.begin:node.end]
 	if bytes.Equal(Alpha, slice) {
 		star_form.value_type = 'a'
-		limit, value = GetLimit(bs, node.end+1)
+		limit, value, endchr = GetLimit(bs, node.end+1)
+		star_form.boundary1 = limit
+		star_form.limit1 = value
+		if endchr > 0 {
+			limit, value, endchr = GetLimit(bs, endchr)
+			star_form.boundary1 = limit
+			star_form.limit1 = value
+		}
 	} else if bytes.Equal(Numeric, slice) {
 		star_form.value_type = 'n'
 	} else if bytes.Equal(Date, slice) {

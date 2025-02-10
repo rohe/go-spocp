@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 )
 
 type StarForm struct {
@@ -18,6 +19,15 @@ var Date = []byte{'d', 'a', 't', 'e'}
 var Time = []byte{'t', 'i', 'm', 'e'}
 var Ipv4 = []byte{'i', 'p', 'v', '4'}
 var Ipv6 = []byte{'i', 'p', 'v', '6'}
+
+var RangeTypes = map[byte]string{
+	'n': "Numeric",
+	'a': "Alpha",
+	'd': "Date",
+	't': "Time",
+	'4': "Ipv4",
+	'6': "Ipv6",
+}
 
 var LE = []byte("le")
 var LT = []byte("lt")
@@ -67,10 +77,9 @@ func GetRange(inp *Input) (*StarForm, error) {
 	var node *Node
 	var err error
 	var slice, limit, value []byte
-	var endchr int
 
 	node, err = GetOctet(inp)
-	if err == nil {
+	if err != nil {
 		return nil, err
 	}
 
@@ -79,14 +88,6 @@ func GetRange(inp *Input) (*StarForm, error) {
 	slice = inp.Slice(node.begin, node.end)
 	if bytes.Equal(Alpha, slice) {
 		starForm.value_type = 'a'
-		limit, value = GetLimit(inp)
-		starForm.boundary1 = limit
-		starForm.limit1 = value
-		if endchr > 0 {
-			limit, value = GetLimit(inp)
-			starForm.boundary1 = limit
-			starForm.limit1 = value
-		}
 	} else if bytes.Equal(Numeric, slice) {
 		starForm.value_type = 'n'
 	} else if bytes.Equal(Date, slice) {
@@ -99,5 +100,29 @@ func GetRange(inp *Input) (*StarForm, error) {
 		starForm.value_type = '6'
 	}
 
+	limit, value = GetLimit(inp)
+	starForm.boundary1 = limit
+	starForm.limit1 = value
+	if inp.NextByte() != ')' {
+		limit, value = GetLimit(inp)
+		starForm.boundary1 = limit
+		starForm.limit1 = value
+	}
+
 	return &starForm, nil
+}
+
+func PrintStartForm(inp Input, node *Node, indent int) {
+	for ; indent > 0; indent-- {
+		fmt.Printf("%s", TAB)
+	}
+	text := string(inp.Slice(node.begin, node.end))
+	// value type
+	value_type := RangeTypes[node.StarForm.value_type]
+
+	text += fmt.Sprintf(" - %v %s %s", value_type, node.StarForm.boundary1, node.StarForm.limit1)
+	if node.StarForm.boundary2 != nil {
+		text += fmt.Sprintf(" %s %s", node.StarForm.boundary2, node.StarForm.limit2)
+	}
+	fmt.Println(text)
 }

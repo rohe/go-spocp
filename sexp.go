@@ -22,11 +22,12 @@ var LeftBracket byte = 40
 var RightBracket byte = 41
 
 type Node struct {
-	typ   SexpPart
-	begin int
-	end   int
-	next  *Node
-	part  *Node
+	typ      SexpPart
+	begin    int
+	end      int
+	next     *Node
+	part     *Node
+	StarForm *StarForm
 }
 
 var SetStarform = []byte{'s', 'e', 't'}
@@ -129,6 +130,7 @@ func GetSexp(inp *Input) (*Node, error) {
 		if inp.NextByte() == LeftBracket {
 			nb++
 			inp.startByte += 1
+			fmt.Println(inp.Left())
 			// can be either an s-expr or a star-form
 			// a star-form starts with 1:*
 			if bytes.Equal(inp.Prefix(3), StarFormPrefix) {
@@ -166,6 +168,7 @@ func GetStarForm(inp *Input) (*Node, error) {
 	var node *Node
 	var err error
 	var c []byte
+	var spec *StarForm
 
 	// first element MUST be '1:*'
 	// Skip the '1:*' Prefix
@@ -181,6 +184,12 @@ func GetStarForm(inp *Input) (*Node, error) {
 		node.typ = Set
 	} else if bytes.Equal(RangeStarform, c) {
 		node.typ = Range
+		spec, err = GetRange(inp)
+		node.StarForm = spec
+		if err != nil {
+			log.Fatal(err)
+			return node, err
+		}
 	} else if bytes.Equal(PrefixStarform, c) {
 		node.typ = Prefix
 	} else if bytes.Equal(SuffixStarform, c) {
@@ -192,19 +201,20 @@ func GetStarForm(inp *Input) (*Node, error) {
 	return node, nil
 }
 
-func PrintOctet(bs []byte, node *Node, indent int) {
+func PrintOctet(inp Input, node *Node, indent int) {
 	for ; indent > 0; indent-- {
 		fmt.Printf("%s", TAB)
 	}
-	fmt.Printf("%s", bs[node.begin:node.end])
+	fmt.Printf("%s", inp.Slice(node.begin, node.end))
+
 	if node.next != nil {
-		PrintOctet(bs, node.next, indent+1)
+		PrintOctet(inp, node.next, indent+1)
 	} else {
 		fmt.Println()
 	}
 }
 
-func PrintSExpression(bs []byte, root *Node, indent int) {
+func PrintSExpression(inp Input, root *Node, indent int) {
 
 	var node *Node
 
@@ -212,18 +222,20 @@ func PrintSExpression(bs []byte, root *Node, indent int) {
 	for ; indent > 0; indent-- {
 		fmt.Printf("%s", TAB)
 	}
-	fmt.Println(string(bs[node.begin:node.end]))
+	fmt.Println(string(inp.Slice(node.begin, node.end)))
 
 	if node.next.typ == SExpression {
-		PrintSExpression(bs, node.next, indent+1)
+		PrintSExpression(inp, node.next, indent+1)
 	} else if node.next.typ == Octet {
-		PrintOctet(bs, node.next, indent+2)
+		PrintOctet(inp, node.next, indent+2)
+	} else if node.next.StarForm != nil {
+		PrintStartForm(inp, node.next, indent+2)
 	}
 	if root.next != nil {
 		if root.next.typ == SExpression {
-			PrintSExpression(bs, root.next, indent+1)
+			PrintSExpression(inp, root.next, indent+1)
 		} else if root.next.typ == Octet {
-			PrintOctet(bs, root.next, indent+2)
+			PrintOctet(inp, root.next, indent+2)
 		}
 	}
 }

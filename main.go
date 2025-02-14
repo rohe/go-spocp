@@ -29,21 +29,26 @@ func (inp Input) Left() string {
 }
 
 func main() {
-	// TIP <p>Press <shortcut actionId="ShowIntentionActions"/> when your caret is at the underlined text
-	// to see how GoLand suggests fixing the warning.</p><p>Alternatively, if available, click the lightbulb to view possible fixes.</p>
 	// s := "(gopher foo)"
 	// s := "(11:certificate(6:issuer3:bob)(7:subject5:alice))"
-	s := "(11:certificate(6:issuer3:bob)(5:level(1:*5:range7:numeric2:ge3:100)))"
-	bs := []byte(s)
-	var SExpression *Node
-	var err error
-	// Skip the first '('
-	var inp = Input{bs, 1}
-
-	SExpression, err = GetSexp(&inp)
-	if err != nil {
-		log.Fatal("Parse error")
+	var s_expressions = []string{
+		// "(11:certificate(6:issuer3:bob)(5:level(1:*5:range7:numeric2:ge3:100)))",
+		// "(11:certificate(6:issuer3:bob)(5:level(1:*5:range5:alpha2:ge3:abc)))",
+		// "(11:certificate(6:issuer3:bob)(5:level(1:*5:range4:ipv42:ge11:130.239.1.1)))",
+		"(11:certificate(6:issuer3:bob)(5:fruit(1:*3:set5:apple6:orange5:lemon)))",
 	}
-	fmt.Println("Done")
-	PrintSExpression(inp, SExpression, 0)
+	for _, expression := range s_expressions {
+		bs := []byte(expression)
+		var SExpression *Node
+		var err error
+		// Skip the first '('
+		var inp = Input{bs, 1}
+
+		SExpression, err = GetSexp(&inp)
+		if err != nil {
+			log.Fatal("Parse error")
+		}
+		fmt.Println("Done")
+		PrintSExpression(inp, SExpression, 0)
+	}
 }

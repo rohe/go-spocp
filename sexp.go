@@ -165,7 +165,7 @@ func GetSexp(inp *Input) (*Node, error) {
 }
 
 func GetStarForm(inp *Input) (*Node, error) {
-	var node *Node
+	var node, item *Node
 	var err error
 	var c []byte
 	var spec *StarForm
@@ -182,6 +182,13 @@ func GetStarForm(inp *Input) (*Node, error) {
 	c = inp.bs[node.begin:node.end]
 	if bytes.Equal(SetStarform, c) {
 		node.typ = Set
+		item, err = GetSet(inp)
+		if err != nil {
+			log.Fatal(err)
+			return node, err
+		} else {
+			node.next = item
+		}
 	} else if bytes.Equal(RangeStarform, c) {
 		node.typ = Range
 		spec, err = GetRange(inp)
@@ -199,6 +206,34 @@ func GetStarForm(inp *Input) (*Node, error) {
 	}
 
 	return node, nil
+}
+
+func GetSet(inp *Input) (*Node, error) {
+	var node, item *Node
+	var prim Node
+	var err error
+
+	prim = Node{
+		typ: Set,
+	}
+
+	node = &prim
+	for {
+		if inp.NextByte() == LeftBracket {
+			item, err = GetSexp(inp)
+			if err != nil {
+				log.Fatal(err)
+				return node, err
+			}
+		} else if inp.NextByte() == RightBracket {
+			break
+		} else {
+			item, err = GetOctet(inp)
+		}
+		node.part = item
+		node = item
+	}
+	return &prim, nil
 }
 
 func PrintOctet(inp Input, node *Node, indent int) {
@@ -228,6 +263,8 @@ func PrintSExpression(inp Input, root *Node, indent int) {
 		PrintSExpression(inp, node.next, indent+1)
 	} else if node.next.typ == Octet {
 		PrintOctet(inp, node.next, indent+2)
+	} else if node.next.typ == Set {
+		PrintSet(inp, node.next, indent+2)
 	} else if node.next.StarForm != nil {
 		PrintStartForm(inp, node.next, indent+2)
 	}
@@ -236,6 +273,24 @@ func PrintSExpression(inp Input, root *Node, indent int) {
 			PrintSExpression(inp, root.next, indent+1)
 		} else if root.next.typ == Octet {
 			PrintOctet(inp, root.next, indent+2)
+		}
+	}
+}
+
+func PrintSet(inp Input, node *Node, indent int) {
+	if node.next != nil {
+		node = node.next
+	}
+	for ; node != nil; node = node.part {
+		if node.typ == SExpression {
+			PrintSExpression(inp, node, indent+3)
+		} else if node.typ == Octet {
+			PrintOctet(inp, node, indent+3)
+		} else if node.typ == Set {
+			for ; indent > 0; indent-- {
+				fmt.Printf("%s", TAB)
+			}
+			fmt.Println("Set")
 		}
 	}
 }

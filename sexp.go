@@ -6,28 +6,62 @@ import (
 	"log"
 )
 
-type SexpPart int
-
-const (
-	Octet SexpPart = iota
-	SExpression
-	Set
-	Range
-	Prefix
-	Suffix
-	Wildcard
-)
-
 var LeftBracket byte = 40
 var RightBracket byte = 41
 
+type OctetString struct {
+	Value []byte
+}
+
+type Set struct {
+	Value []Node
+}
+
+type Range struct {
+	valueType  byte
+	boundary   [2][]byte
+	numLimit   [2]int
+	ipv4Limit  [2][4]int
+	alphaLimit [2]string
+	dateLimit  [2]string
+	timeLimit  [2]string
+	ipv6Limit  [2][]byte
+}
+
+type Prefix struct {
+	Value []byte
+}
+
+type Suffix struct {
+	Value []byte
+}
+
 type Node struct {
-	typ      SexpPart
-	begin    int
-	end      int
-	next     *Node
-	part     *Node
-	StarForm *StarForm
+	SExpression bool
+	next        *Node
+	part        *Node
+	Octet       *OctetString
+	Set         *Set
+	Range       *Range
+	Prefix      *Prefix
+	Suffix      *Suffix
+}
+
+func (nod Node) IsType(typ string) bool {
+	if typ == "sexpression" && nod.SExpression == true {
+		return true
+	} else if typ == "octet_string" && nod.Octet != nil {
+		return true
+	} else if typ == "set" && nod.Set != nil {
+		return true
+	} else if typ == "range" && nod.Range != nil {
+		return true
+	} else if typ == "prefix" && nod.Prefix != nil {
+		return true
+	} else if typ == "suffix" && nod.Suffix != nil {
+		return true
+	}
+	return false
 }
 
 var SetStarform = []byte{'s', 'e', 't'}
@@ -53,21 +87,21 @@ func GetLen(inp *Input) (int, int, error) {
 	if remainder == 0 {
 		return -1, b, fmt.Errorf("empty string to work with")
 	}
-	for i, val := range inp.bs[inp.startByte:] {
+	for i, val := range inp.bs[inp.currentPosition:] {
 		if Digit(val) {
 			if n != 0 {
 				n *= 10
 			}
 			n += int(val) - 48 // '0' ascii
 		} else {
-			b = inp.startByte + i
+			b = inp.currentPosition + i
 			break
 		}
 	}
 	if n == 0 {
 		return -1, b, fmt.Errorf("no digit found")
 	}
-	inp.startByte = b + n + 1
+	inp.currentPosition = b + n + 1
 	return n, b, nil
 }
 
@@ -101,106 +135,125 @@ func GetOctet(inp *Input) (*Node, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	oct := OctetString{
+		Value: inp.Slice(octStrStart+1, octStrStart+octStrLen+1),
+	}
+
 	node = Node{
-		typ:   Octet,
-		begin: octStrStart + 1,
-		end:   octStrStart + octStrLen + 1,
+		Octet: &oct,
 		next:  nil,
 		part:  nil,
 	}
-	inp.startByte = octStrStart + octStrLen + 1
+	inp.currentPosition = octStrStart + octStrLen + 1
 	return &node, nil
 }
 
 func GetSexp(inp *Input) (*Node, error) {
 	var tag, node, next *Node
-	var sexp Node
 	var err error
 	nb := 0
 
 	// first element MUST be a tag
 	tag, err = GetOctet(inp)
+
 	if err != nil {
 		log.Fatal(err)
 		return tag, err
 	}
+	tag.SExpression = true
 	node = tag
 
 	for inp.Remaining() > 0 {
 		if inp.NextByte() == LeftBracket {
 			nb++
-			inp.startByte += 1
-			fmt.Println(inp.Left())
+			inp.currentPosition += 1
+			fmt.Println(inp.RemainingString())
 			// can be either an s-expr or a star-form
 			// a star-form starts with 1:*
 			if bytes.Equal(inp.Prefix(3), StarFormPrefix) {
 				next, err = GetStarForm(inp)
+				if err != nil {
+					log.Fatal(err)
+					return next, err
+				}
+				node.part = next
+				node = next
+
 			} else {
 				next, err = GetSexp(inp)
-			}
-			if err != nil {
-				log.Fatal(err)
-				return next, err
-			} else {
+				if err != nil {
+					log.Fatal(err)
+					return next, err
+				}
 				node.next = next
 				node = next
 			}
 		} else if inp.NextByte() == RightBracket {
 			nb--
-			inp.startByte += 1
-			if nb < 0 {
+			inp.currentPosition += 1
+			if nb <= 0 {
 				break
 			}
 		} else { // MUST be an octet-string
 			next, err = GetOctet(inp)
-			node.next = next
+			node.part = next
 			node = next
 		}
 	}
-	sexp = Node{
-		typ: SExpression,
-	}
-	sexp.part = tag
-	return &sexp, nil
+	return tag, nil
 }
 
 func GetStarForm(inp *Input) (*Node, error) {
-	var node, item *Node
+	var node *Node
 	var err error
 	var c []byte
-	var spec *StarForm
+	var setItem *Set
+	var rangeItem *Range
+	var prefixItem *Prefix
+	var suffixItem *Suffix
 
 	// first element MUST be '1:*'
 	// Skip the '1:*' Prefix
-	inp.startByte += 3
+	inp.currentPosition += 3
 	node, err = GetOctet(inp)
 	if err != nil {
 		log.Fatal(err)
 		return node, err
 	}
 	// First the star form type
-	c = inp.bs[node.begin:node.end]
+	c = node.Octet.Value
 	if bytes.Equal(SetStarform, c) {
-		node.typ = Set
-		item, err = GetSet(inp)
+		setItem, err = GetSet(inp)
 		if err != nil {
 			log.Fatal(err)
-			return node, err
-		} else {
-			node.next = item
+			return nil, err
 		}
+		node.Set = setItem
+		node.Octet = nil
 	} else if bytes.Equal(RangeStarform, c) {
-		node.typ = Range
-		spec, err = GetRange(inp)
-		node.StarForm = spec
+		rangeItem, err = GetRange(inp)
 		if err != nil {
 			log.Fatal(err)
 			return node, err
 		}
+		node.Range = rangeItem
+		node.Octet = nil
 	} else if bytes.Equal(PrefixStarform, c) {
-		node.typ = Prefix
+		prefixItem, err = GetPrefix(inp)
+		if err != nil {
+			log.Fatal(err)
+			return node, err
+		}
+		node.Prefix = prefixItem
+		node.Octet = nil
 	} else if bytes.Equal(SuffixStarform, c) {
-		node.typ = Suffix
+		suffixItem, err = GetSuffix(inp)
+		if err != nil {
+			log.Fatal(err)
+			return node, err
+		}
+		node.Suffix = suffixItem
+		node.Octet = nil
 	} else {
 		return node, fmt.Errorf("invalid star form")
 	}
@@ -208,86 +261,110 @@ func GetStarForm(inp *Input) (*Node, error) {
 	return node, nil
 }
 
-func GetSet(inp *Input) (*Node, error) {
-	var node, item *Node
-	var prim Node
+func GetSet(inp *Input) (*Set, error) {
+	// set = "3:set" 1*[s-expr / tag]
+	var item *Node
+	var prim Set
 	var err error
+	// n := 0
 
-	prim = Node{
-		typ: Set,
-	}
+	prim = Set{}
 
-	node = &prim
 	for {
 		if inp.NextByte() == LeftBracket {
+			inp.currentPosition += 1
 			item, err = GetSexp(inp)
 			if err != nil {
 				log.Fatal(err)
-				return node, err
+				return nil, err
 			}
 		} else if inp.NextByte() == RightBracket {
 			break
 		} else {
 			item, err = GetOctet(inp)
+			if err != nil {
+				log.Fatal(err)
+				return nil, err
+			}
 		}
-		node.part = item
-		node = item
+		prim.Value = append(prim.Value, *item)
 	}
 	return &prim, nil
 }
 
-func PrintOctet(inp Input, node *Node, indent int) {
-	for ; indent > 0; indent-- {
+func PrintIndent(level int) {
+	for ; level > 0; level-- {
 		fmt.Printf("%s", TAB)
 	}
-	fmt.Printf("%s", inp.Slice(node.begin, node.end))
+}
+
+func PrintOctet(node *Node, level int) {
+	PrintIndent(level)
+	fmt.Printf("%s", node.Octet.Value)
 
 	if node.next != nil {
-		PrintOctet(inp, node.next, indent+1)
+		PrintOctet(node.next, level+1)
 	} else {
 		fmt.Println()
 	}
 }
 
-func PrintSExpression(inp Input, root *Node, indent int) {
+func PrintPrefix(node *Node, level int) {
+	var txt string
+	txt = fmt.Sprintf("Prefix %s", node.Octet.Value)
+	fmt.Println(txt)
+}
 
-	var node *Node
+func PrintSuffix(node *Node, level int) {
+	var txt string
 
-	node = root.part
-	for ; indent > 0; indent-- {
-		fmt.Printf("%s", TAB)
-	}
-	fmt.Println(string(inp.Slice(node.begin, node.end)))
+	PrintIndent(level)
+	txt = fmt.Sprintf("Suffix %s", node.Octet.Value)
+	fmt.Println(txt)
+}
 
-	if node.next.typ == SExpression {
-		PrintSExpression(inp, node.next, indent+1)
-	} else if node.next.typ == Octet {
-		PrintOctet(inp, node.next, indent+2)
-	} else if node.next.typ == Set {
-		PrintSet(inp, node.next, indent+2)
-	} else if node.next.StarForm != nil {
-		PrintStartForm(inp, node.next, indent+2)
-	}
-	if root.next != nil {
-		if root.next.typ == SExpression {
-			PrintSExpression(inp, root.next, indent+1)
-		} else if root.next.typ == Octet {
-			PrintOctet(inp, root.next, indent+2)
+func PrintSequence(node *Node, level int) {
+	for node != nil {
+		if node.IsType("sexpression") {
+			PrintSExpression(node, level)
+		} else if node.IsType("octet_string") {
+			PrintOctet(node, level)
+		} else if node.IsType("set") {
+			PrintSet(node, level)
+		} else if node.IsType("range") {
+			PrintRange(node.Range, level)
+		} else if node.IsType("prefix") {
+			PrintPrefix(node, level)
+		} else if node.IsType("suffix") {
+			PrintSuffix(node, level)
 		}
+		node = node.next
+	}
+}
+func PrintSExpression(node *Node, level int) {
+	PrintIndent(level)
+	fmt.Println(string(node.Octet.Value))
+
+	if node.part != nil {
+		PrintSequence(node.part, level+1)
+	}
+	if node.next != nil {
+		PrintSequence(node.next, level+1)
 	}
 }
 
-func PrintSet(inp Input, node *Node, indent int) {
+func PrintSet(node *Node, level int) {
 	if node.next != nil {
 		node = node.next
 	}
-	for ; node != nil; node = node.part {
-		if node.typ == SExpression {
-			PrintSExpression(inp, node, indent+3)
-		} else if node.typ == Octet {
-			PrintOctet(inp, node, indent+3)
-		} else if node.typ == Set {
-			for ; indent > 0; indent-- {
+
+	for _, nod := range node.Set.Value {
+		if nod.IsType("sexpression") {
+			PrintSExpression(&nod, level)
+		} else if nod.IsType("octet_string") {
+			PrintOctet(&nod, level)
+		} else if nod.IsType("set") {
+			for ; level > 0; level-- {
 				fmt.Printf("%s", TAB)
 			}
 			fmt.Println("Set")

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"net/netip"
+	"time"
 )
 
 var LeftBracket byte = 40
@@ -18,14 +20,14 @@ type Set struct {
 }
 
 type Range struct {
-	valueType  byte
+	valueType  string
 	boundary   [2][]byte
 	numLimit   [2]int
-	ipv4Limit  [2][4]int
+	ipv4Limit  [2]netip.Addr
 	alphaLimit [2]string
-	dateLimit  [2]string
-	timeLimit  [2]string
-	ipv6Limit  [2][]byte
+	dateLimit  [2]time.Time
+	timeLimit  [2]time.Time
+	ipv6Limit  [2]netip.Addr
 }
 
 type Prefix struct {
@@ -47,6 +49,8 @@ type Node struct {
 	Suffix      *Suffix
 }
 
+var ValueType = []string{"sexpression", "octet_string", "set", "range", "prefix", "suffix"}
+
 func (nod Node) IsType(typ string) bool {
 	if typ == "sexpression" && nod.SExpression == true {
 		return true
@@ -62,6 +66,25 @@ func (nod Node) IsType(typ string) bool {
 		return true
 	}
 	return false
+}
+
+func (nod Node) Compare(nod2 *Node) (bool, error) {
+	if nod.IsType("sexpression") && nod2.IsType("sexpression") {
+		return SExpressionCompare(&nod, nod2)
+	} else if nod.IsType("octet_string") && nod2.IsType("octet_string") {
+		return OctetCompare(nod.Octet.Value, nod2.Octet.Value)
+	} else {
+		return false, fmt.Errorf("invalid comparison operation")
+	}
+}
+
+func (nod Node) SameType(nod2 Node) string {
+	for _, typ := range ValueType {
+		if nod.IsType(typ) && nod2.IsType(typ) {
+			return typ
+		}
+	}
+	return ""
 }
 
 var SetStarform = []byte{'s', 'e', 't'}
@@ -167,7 +190,7 @@ func GetSexp(inp *Input) (*Node, error) {
 		if inp.NextByte() == LeftBracket {
 			nb++
 			inp.currentPosition += 1
-			fmt.Println(inp.RemainingString())
+			// fmt.Println(inp.RemainingString())
 			// can be either an s-expr or a star-form
 			// a star-form starts with 1:*
 			if bytes.Equal(inp.Prefix(3), StarFormPrefix) {
@@ -289,6 +312,27 @@ func GetSet(inp *Input) (*Set, error) {
 		}
 		prim.Value = append(prim.Value, *item)
 	}
+
+	// Verify that there are no two s-expression with the same tag, the same for octet strings
+	seenSexp := make(map[string]bool)
+	seenOctet := make(map[string]bool)
+
+	for _, nod := range prim.Value {
+		if nod.IsType("sexpression") {
+			if seenSexp[string(nod.Octet.Value)] {
+				err = fmt.Errorf("duplicate s-expression tags")
+				return nil, err
+			}
+			seenSexp[string(nod.Octet.Value)] = true
+		} else if nod.IsType("octet_string") {
+			if seenOctet[string(nod.Octet.Value)] {
+				err = fmt.Errorf("duplicate octet string")
+				return nil, err
+			}
+			seenOctet[string(nod.Octet.Value)] = true
+		}
+	}
+
 	return &prim, nil
 }
 
@@ -311,6 +355,8 @@ func PrintOctet(node *Node, level int) {
 
 func PrintPrefix(node *Node, level int) {
 	var txt string
+
+	PrintIndent(level)
 	txt = fmt.Sprintf("Prefix %s", node.Octet.Value)
 	fmt.Println(txt)
 }

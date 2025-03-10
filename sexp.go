@@ -21,7 +21,7 @@ type Set struct {
 
 type Range struct {
 	valueType  string
-	boundary   [2][]byte
+	boundary   [2]string
 	numLimit   [2]int
 	ipv4Limit  [2]netip.Addr
 	alphaLimit [2]string
@@ -87,10 +87,12 @@ func (nod Node) SameType(nod2 Node) string {
 	return ""
 }
 
-var SetStarform = []byte{'s', 'e', 't'}
-var RangeStarform = []byte{'r', 'a', 'n', 'g', 'e'}
-var PrefixStarform = []byte{'p', 'r', 'e', 'f', 'i', 'x'}
-var SuffixStarform = []byte{'s', 'u', 'f', 'f', 'i', 'x'}
+const (
+	SetStarform    = "set"
+	RangeStarform  = "range"
+	PrefixStarform = "prefix"
+	SuffixStarform = "suffix"
+)
 
 var StarFormPrefix = []byte{'1', ':', '*'}
 
@@ -229,7 +231,7 @@ func GetSexp(inp *Input) (*Node, error) {
 func GetStarForm(inp *Input) (*Node, error) {
 	var node *Node
 	var err error
-	var c []byte
+	// var c []byte
 	var setItem *Set
 	var rangeItem *Range
 	var prefixItem *Prefix
@@ -244,8 +246,8 @@ func GetStarForm(inp *Input) (*Node, error) {
 		return node, err
 	}
 	// First the star form type
-	c = node.Octet.Value
-	if bytes.Equal(SetStarform, c) {
+	switch c := string(node.Octet.Value); c {
+	case SetStarform:
 		setItem, err = GetSet(inp)
 		if err != nil {
 			log.Fatal(err)
@@ -253,7 +255,7 @@ func GetStarForm(inp *Input) (*Node, error) {
 		}
 		node.Set = setItem
 		node.Octet = nil
-	} else if bytes.Equal(RangeStarform, c) {
+	case RangeStarform:
 		rangeItem, err = GetRange(inp)
 		if err != nil {
 			log.Fatal(err)
@@ -261,7 +263,7 @@ func GetStarForm(inp *Input) (*Node, error) {
 		}
 		node.Range = rangeItem
 		node.Octet = nil
-	} else if bytes.Equal(PrefixStarform, c) {
+	case PrefixStarform:
 		prefixItem, err = GetPrefix(inp)
 		if err != nil {
 			log.Fatal(err)
@@ -269,7 +271,7 @@ func GetStarForm(inp *Input) (*Node, error) {
 		}
 		node.Prefix = prefixItem
 		node.Octet = nil
-	} else if bytes.Equal(SuffixStarform, c) {
+	case SuffixStarform:
 		suffixItem, err = GetSuffix(inp)
 		if err != nil {
 			log.Fatal(err)
@@ -277,7 +279,7 @@ func GetStarForm(inp *Input) (*Node, error) {
 		}
 		node.Suffix = suffixItem
 		node.Octet = nil
-	} else {
+	default:
 		return node, fmt.Errorf("invalid star form")
 	}
 

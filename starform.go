@@ -31,41 +31,36 @@ var Time = []byte{'t', 'i', 'm', 'e'}
 var Ipv4 = []byte{'i', 'p', 'v', '4'}
 var Ipv6 = []byte{'i', 'p', 'v', '6'}
 
-var LE = []byte("le")
-var LT = []byte("lt")
-var GE = []byte("ge")
-var GT = []byte("gt")
+var limits = []string{"le", "lt", "ge", "gt"}
 
-var limits = [][]byte{LE, LT, GE, GT}
-
-func CorrectLimit(val []byte) bool {
+func CorrectLimit(val string) bool {
 	// tests that the given limit type (ge, gt, ...) is one that is expected
 	for _, lim := range limits {
-		if bytes.Equal(lim, val) {
+		if lim == val {
 			return true
 		}
 	}
 	return false
 }
 
-func GetLimit(inp *Input) ([]byte, []byte) {
+func GetLimit(inp *Input) (string, []byte) {
 	var gogeLole, value *Node
 	var err error
-	var limValue []byte
+	var limValue string
 
 	gogeLole, err = GetOctet(inp)
 	if err != nil {
-		return nil, []byte("error")
+		return "", []byte("error")
 	}
-	limValue = gogeLole.Octet.Value
+	limValue = string(gogeLole.Octet.Value)
 	if CorrectLimit(limValue) == false {
 
-		return nil, []byte("Incorrect boundary type " + string(limValue))
+		return "", []byte("Incorrect boundary type " + string(limValue))
 	}
 
 	value, err = GetOctet(inp)
 	if err != nil {
-		return nil, []byte("error")
+		return "", []byte("error")
 	}
 
 	return limValue, value.Octet.Value
@@ -150,7 +145,7 @@ func VerifyTime(rng *Range, value []byte, n int) error {
 }
 
 func GetRestrictions(inp *Input, rng *Range, n int) error {
-	var limit []byte
+	var limit string
 	var value []byte
 
 	limit, value = GetLimit(inp)
@@ -273,7 +268,7 @@ func PrintRange(rng *Range, indent int) {
 
 	text = fmt.Sprintf(" - [%v]", rng.valueType)
 	text += Boundary(rng, 0)
-	if rng.boundary[1] != nil {
+	if rng.boundary[1] != "" {
 		text += Boundary(rng, 1)
 	}
 	fmt.Println(text)

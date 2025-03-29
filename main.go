@@ -17,7 +17,7 @@ func (inp Input) Remaining() int {
 func (inp Input) NextByte() byte {
 	return inp.bs[inp.currentPosition]
 }
-func (inp Input) Slice(begin int, end int) []byte {
+func (inp Input) Slice(begin, end int) []byte {
 	return inp.bs[begin:end]
 }
 func (inp Input) Prefix(length int) []byte {
@@ -26,6 +26,7 @@ func (inp Input) Prefix(length int) []byte {
 func (inp Input) RemainingString() string {
 	return string(inp.bs[inp.currentPosition:])
 }
+func (inp Input) RemainingBytes() []byte { return inp.bs[inp.currentPosition:] }
 
 func main() {
 	// s := "(gopher foo)"
@@ -72,8 +73,9 @@ func main() {
 
 		// Skip the first '('
 		var inp = Input{[]byte(stringRule), 1}
+		brackets := 1
 
-		Rule, err = GetSexp(&inp)
+		Rule, err = GetSexp(&inp, &brackets)
 		if err != nil {
 			log.Fatal("Parse error")
 		}
@@ -81,12 +83,12 @@ func main() {
 			println(query)
 			// Skip the first '('
 			inp = Input{[]byte(query), 1}
-
-			Query, err = GetSexp(&inp)
+			brackets = 1
+			Query, err = GetSexp(&inp, &brackets)
 			if err != nil {
 				log.Fatal("Parse error")
 			}
-			cmp, err = Query.Compare(Rule)
+			cmp, err = Query.Compare(*Rule)
 			println(cmp)
 		}
 	}

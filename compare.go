@@ -7,10 +7,14 @@ import (
 	"time"
 )
 
+type Compare interface {
+	Comp(any) int
+}
+
 // Compare functions return -1 if rule is less than query
 // 0 if equal and 1 if rule is greater then query
 
-func SExpressionCompare(query, rule *Node) (bool, error) {
+func SExpressionCompare(query, rule Node) (bool, error) {
 	var err error
 	var cmp bool
 
@@ -23,29 +27,18 @@ func SExpressionCompare(query, rule *Node) (bool, error) {
 		return false, nil
 	}
 
-	if query.part != nil && rule.part != nil {
-		cmp, err = CompareSequence(query.part, rule.part)
+	if query.sPart != nil && rule.sPart != nil {
+		cmp, err = CompareSequence(query.sPart, rule.sPart)
 		if err != nil {
 			return false, err
 		}
 		if cmp == false {
 			return false, nil
 		}
-	} else if rule.part != nil {
+	} else if rule.sPart != nil {
 		return false, fmt.Errorf("rule more specific than query")
 	}
 
-	if query.next != nil && rule.next != nil {
-		cmp, err = CompareSequence(query.next, rule.next)
-		if err != nil {
-			return false, err
-		}
-		if cmp == false {
-			return false, nil
-		}
-	} else if rule.next != nil {
-		return false, fmt.Errorf("rule more specific than query")
-	}
 	return true, nil
 }
 
@@ -274,7 +267,7 @@ func SuffixCompare(query, rule []byte) (bool, error) {
 	return OctetCompare(query, rule)
 }
 
-func LessOrEqualTo(query, rule *Node) (bool, error) {
+func LessOrEqualTo(query, rule Node) (bool, error) {
 	switch {
 	case rule.IsType("sexpression") && query.IsType("sexpression"):
 		return SExpressionCompare(query, rule)
@@ -297,26 +290,21 @@ func LessOrEqualTo(query, rule *Node) (bool, error) {
 	}
 }
 
-func CompareSequence(query, rule *Node) (bool, error) {
+func CompareSequence(query, rule []Node) (bool, error) {
 	var cmp bool
 	var err error
 
-	for rule != nil {
-		cmp, err = LessOrEqualTo(query, rule)
-
+	if len(query) > len(rule) {
+		return false, fmt.Errorf("invalid query length")
+	}
+	for i, q := range query {
+		r := rule[i]
+		cmp, err = LessOrEqualTo(q, r)
 		if err != nil {
 			return false, err
 		}
 		if cmp == false {
 			return cmp, nil
-		}
-
-		rule = rule.next
-		if rule != nil {
-			query = query.next
-			if query == nil {
-				return false, fmt.Errorf("query list shorter than rule")
-			}
 		}
 	}
 	return true, nil

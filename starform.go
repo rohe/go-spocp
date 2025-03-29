@@ -197,7 +197,7 @@ func GetRange(inp *Input) (*Range, error) {
 	if err != nil {
 		return nil, err
 	}
-	if inp.NextByte() != ')' {
+	if inp.Remaining() > 0 && inp.NextByte() != ')' {
 		err = GetRestrictions(inp, &starRange, 1)
 		if err != nil {
 			return nil, err
@@ -226,9 +226,15 @@ func GetPrefix(inp *Input) (*Prefix, error) {
 func GetSuffix(inp *Input) (*Suffix, error) {
 	var suffix Suffix
 	var err error
+	var node *Node
 
-	suffix = Suffix{}
-	err = errors.New("Incorrect suffix value _value_")
+	node, err = GetOctet(inp)
+	if err != nil {
+		return nil, err
+	}
+	suffix = Suffix{
+		Value: node.Octet.Value,
+	}
 
 	return &suffix, err
 }
